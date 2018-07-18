@@ -36,9 +36,6 @@ enum Axis {
 impl fmt::Display for Axis {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            //Axis::GNU => "GNU".to_string(),
-            //Axis::OSS => "OSS".to_string(),
-            //Axis::Proprietary => "Proprietary".to_string(),
             Axis::GNU => write!(f, "GNU"),
             Axis::OSS => write!(f, "OSS"),
             Axis::Proprietary => write!(f, "Proprietary"),
@@ -63,15 +60,6 @@ struct UserSelection {
     selection: usize,
 }
 
-fn page_of_question(question: &Question) -> String {
-    let mut text: String = question.text.to_string() + "\n";
-    for choice in &question.choices {
-        text += choice.text;
-        text += "\n";
-    }
-    text
-}
-
 #[get("/")]
 fn index() -> Template {
     #[derive(Serialize)]
@@ -85,9 +73,25 @@ fn index() -> Template {
 }
 
 #[get("/<id>")]
-fn question(id: usize, questions: State<Questions>) -> String {
+fn question(id: usize, questions: State<Questions>) -> Template {
     let question: &Question = questions.get(id).expect("out of index");
-    page_of_question(question)
+
+    #[derive(Serialize)]
+    struct PureQuestion {
+        id: usize,
+        question_text: &'static str,
+        choices: Vec<String>,
+    };
+    let mut choices = Vec::new();
+    for c in &question.choices {
+        choices.push(c.text.to_string());
+    }
+    let pquestion = PureQuestion {
+        id: id,
+        question_text: question.text,
+        choices: choices,
+    };
+    Template::render("question", &pquestion)
 }
 
 #[post("/<id>", data = "<choice>")]
@@ -159,7 +163,17 @@ fn main() {
             },
         ],
     };
+    let q2 = Question {
+        text: "lolololo",
+        choices: vec![
+            Choice {
+                text: "wow",
+                scores: vec![(Axis::GNU, 0)],
+            },
+        ],
+    };
     questions.push(q1);
+    questions.push(q2);
 
     rocket::ignite()
         .mount("/", routes![index, question, answer, result])
