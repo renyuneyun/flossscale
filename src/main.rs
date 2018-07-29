@@ -6,9 +6,6 @@ extern crate rocket;
 extern crate rocket_contrib;
 #[macro_use] extern crate serde_derive;
 
-use std::collections::HashMap;
-use std::collections::hash_map::Entry;
-use std::collections::hash_map::Entry::{Occupied, Vacant};
 use std::io;
 use std::fmt;
 
@@ -18,6 +15,66 @@ use rocket::request::{Form, FromForm};
 use rocket::response::Redirect;
 
 use rocket_contrib::Template;
+
+type Axis = Vec<String>;
+type Axes = Vec<Axis>;
+
+#[derive(Serialize)]
+struct Mark {
+    axes: Axis,
+    marks: Vec<i32>,
+}
+
+impl Mark {
+    fn from(ax: &Axis) -> Mark {
+        let mut marks = Vec::new();
+        for a in ax {
+            marks.push(0);
+        }
+        Mark {
+            axes: ax.clone(),
+            marks: marks,
+        }
+    }
+}
+
+#[derive(Serialize)]
+struct Marks {
+    marks: Vec<Mark>,
+}
+
+impl Marks {
+    fn from(axis: &Axes) -> Marks {
+        let mut marks = Vec::new();
+        for a in axis {
+            marks.push(Mark::from(a));
+        }
+        Marks {
+            marks: marks
+        }
+    }
+
+    fn mut_mark_of(&mut self, target: &String) -> Option<&mut i32> {
+        for mark in &mut self.marks {
+            let axis: &Axis = &mark.axes;
+            for i in 0 .. axis.len() {
+                let value: &String = axis.get(i).unwrap();
+                if *value == *target {
+                    return mark.marks.get_mut(i)
+                }
+            }
+        }
+        None
+    }
+
+    fn add_for(&mut self, target: &String, inc: i32) {
+        if let Some(mark) = self.mut_mark_of(target) {
+            *mark += inc;
+        } else {
+            panic!();
+        }
+    }
+}
 
 struct Choice<'a> {
     text: &'a str,
@@ -30,6 +87,13 @@ struct Question<'a> {
 }
 
 type Questions<'a> = Vec<Question<'a>>;
+
+fn dummy_axes() -> Axes {
+    let mut axes: Axes = Vec::new();
+    axes.push(vec![String::from("GNU"), String::from("OSS")]);
+    axes.push(vec![String::from("FLOSS"), String::from("Proprietary")]);
+    axes
+}
 
 #[derive(FromForm)]
 struct UserSelection {
@@ -87,23 +151,15 @@ fn answer(id: usize, choice: Form<UserSelection>, mut cookies: Cookies, question
 
 #[get("/result")]
 fn result(cookies: Cookies, questions: State<Questions>) -> Template {
-    type Scores = HashMap<String, i32>;
-    
-    let mut scores: Scores = HashMap::new();
+    let axes = dummy_axes();
+    let mut marks: Marks = Marks::from(&axes);
+
     for i in 0 .. questions.len() {
         let q = questions.get(i).unwrap();
         let cc = cookies.get(&i.to_string()).expect("Cookie doesn't have this item");
         let ans: usize = cc.value().parse::<usize>().unwrap();
         for (axis, sc) in &q.choices.get(ans).expect("Choice not in available answers").scores {
-            let entry: Entry<String, i32> = scores.entry(axis.clone());
-            match entry {
-                Occupied(mut ent) => {
-                    *ent.get_mut() += sc;
-                },
-                Vacant(mut ent) => {
-                    ent.insert(*sc);
-                },
-            }
+            marks.add_for(axis, *sc);
         }
     }
 
@@ -119,8 +175,10 @@ fn result(cookies: Cookies, questions: State<Questions>) -> Template {
     let mut context = Context{
         items: Vec::new(),
     };
-    for (k, v) in &scores {
-        context.items.push(IndScore {name: k.to_string(), score: *v});
+    for mark in &marks.marks {
+        for i in 0 .. mark.axes.len() {
+            context.items.push(IndScore {name: mark.axes.get(i).unwrap().clone(), score: *mark.marks.get(i).unwrap()})
+        }
     }
     Template::render("result", &context)
 }
