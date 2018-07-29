@@ -4,13 +4,13 @@ version = "0.1.0"
 authors = ["Rui Zhao (renyuneyun) <renyuneyun@gmail.com>"]
 
 [dependencies]
-rocket = "0.3.14"
-rocket_codegen = "0.3.14"
+rocket = "0.3.15"
+rocket_codegen = "0.3.15"
 serde = "1.0"
 serde_derive = "1.0"
 serde_json = "1.0"
 
 [dependencies.rocket_contrib]
-version = "0.3.14"
+version = "0.3.15"
 default-features = false
 features = ["handlebars_templates"]

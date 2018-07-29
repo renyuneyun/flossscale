@@ -6,6 +6,9 @@ extern crate rocket;
 extern crate rocket_contrib;
 #[macro_use] extern crate serde_derive;
 
+use std::collections::HashMap;
+use std::collections::hash_map::Entry;
+use std::collections::hash_map::Entry::{Occupied, Vacant};
 use std::io;
 use std::fmt;
 
@@ -16,44 +19,17 @@ use rocket::response::Redirect;
 
 use rocket_contrib::Template;
 
-#[derive(Debug)]
-enum Axis {
-    GNU,
-    OSS,
-    Proprietary,
+struct Choice<'a> {
+    text: &'a str,
+    scores: Vec<(String, i32)>,
 }
 
-//impl Axis {
-//    fn text(&self) -> String {
-//        match self {
-//            Axis::GNU => "GNU".to_string(),
-//            Axis::OSS => "OSS".to_string(),
-//            Axis::Proprietary => "Proprietary".to_string(),
-//        }
-//    }
-//}
-
-impl fmt::Display for Axis {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            Axis::GNU => write!(f, "GNU"),
-            Axis::OSS => write!(f, "OSS"),
-            Axis::Proprietary => write!(f, "Proprietary"),
-        }
-    }
+struct Question<'a> {
+    text: &'a str,
+    choices: Vec<Choice<'a>>,
 }
 
-struct Choice {
-    text: &'static str,
-    scores: Vec<(Axis, i32)>,
-}
-
-struct Question {
-    text: &'static str,
-    choices: Vec<Choice>,
-}
-
-type Questions = Vec<Question>;
+type Questions<'a> = Vec<Question<'a>>;
 
 #[derive(FromForm)]
 struct UserSelection {
@@ -63,8 +39,8 @@ struct UserSelection {
 #[get("/")]
 fn index() -> Template {
     #[derive(Serialize)]
-    struct Context {
-        name: &'static str,
+    struct Context<'a> {
+        name: &'a str,
     };
     let context = Context {
         name: "asd",
@@ -77,14 +53,14 @@ fn question(id: usize, questions: State<Questions>) -> Template {
     let question: &Question = questions.get(id).expect("out of index");
 
     #[derive(Serialize)]
-    struct PureQuestion {
+    struct PureQuestion<'a> {
         id: usize,
-        question_text: &'static str,
-        choices: Vec<String>,
+        question_text: &'a str,
+        choices: Vec<&'a str>,
     };
     let mut choices = Vec::new();
     for c in &question.choices {
-        choices.push(c.text.to_string());
+        choices.push(c.text);
     }
     let pquestion = PureQuestion {
         id: id,
@@ -111,16 +87,22 @@ fn answer(id: usize, choice: Form<UserSelection>, mut cookies: Cookies, question
 
 #[get("/result")]
 fn result(cookies: Cookies, questions: State<Questions>) -> Template {
-    let mut scores = [0, 0, 0];
+    type Scores = HashMap<String, i32>;
+    
+    let mut scores: Scores = HashMap::new();
     for i in 0 .. questions.len() {
         let q = questions.get(i).unwrap();
         let cc = cookies.get(&i.to_string()).expect("Cookie doesn't have this item");
         let ans: usize = cc.value().parse::<usize>().unwrap();
         for (axis, sc) in &q.choices.get(ans).expect("Choice not in available answers").scores {
-            match axis {
-                Axis::GNU => scores[0] += sc,
-                Axis::OSS => scores[1] += sc,
-                Axis::Proprietary => scores[2] += sc,
+            let entry: Entry<String, i32> = scores.entry(axis.clone());
+            match entry {
+                Occupied(mut ent) => {
+                    *ent.get_mut() += sc;
+                },
+                Vacant(mut ent) => {
+                    ent.insert(*sc);
+                },
             }
         }
     }
@@ -137,9 +119,8 @@ fn result(cookies: Cookies, questions: State<Questions>) -> Template {
     let mut context = Context{
         items: Vec::new(),
     };
-    let ord = [Axis::GNU, Axis::OSS, Axis::Proprietary];
-    for i in 0 .. ord.len() {
-        context.items.push(IndScore {name: format!("{}", ord[i]), score: scores[i]});
+    for (k, v) in &scores {
+        context.items.push(IndScore {name: k.to_string(), score: *v});
     }
     Template::render("result", &context)
 }
@@ -151,15 +132,15 @@ fn main() {
         choices: vec![
             Choice {
                 text: "yes",
-                scores: vec![(Axis::GNU, 1)],
+                scores: vec![(String::from("GNU"), 1)],
             },
             Choice {
                 text: "no",
-                scores: vec![(Axis::OSS, 1)],
+                scores: vec![(String::from("OSS"), 1)],
             },
             Choice {
                 text: "why floss",
-                scores: vec![(Axis::Proprietary, 1)],
+                scores: vec![(String::from("Proprietary"), 1)],
             },
         ],
     };
@@ -168,7 +149,7 @@ fn main() {
         choices: vec![
             Choice {
                 text: "wow",
-                scores: vec![(Axis::GNU, 0)],
+                scores: vec![(String::from("FLOSS"), 0)],
             },
         ],
     };
