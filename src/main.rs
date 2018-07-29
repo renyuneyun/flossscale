@@ -6,6 +6,8 @@ extern crate rocket;
 extern crate rocket_contrib;
 #[macro_use] extern crate serde_derive;
 
+mod question;
+
 use std::io;
 use std::fmt;
 
@@ -16,8 +18,8 @@ use rocket::response::Redirect;
 
 use rocket_contrib::Template;
 
-type Axis = Vec<String>;
-type Axes = Vec<Axis>;
+use question::{Axis, Axes};
+use question::{Choice, Question, Questions};
 
 #[derive(Serialize)]
 struct Mark {
@@ -76,25 +78,6 @@ impl Marks {
     }
 }
 
-struct Choice<'a> {
-    text: &'a str,
-    scores: Vec<(String, i32)>,
-}
-
-struct Question<'a> {
-    text: &'a str,
-    choices: Vec<Choice<'a>>,
-}
-
-type Questions<'a> = Vec<Question<'a>>;
-
-fn dummy_axes() -> Axes {
-    let mut axes: Axes = Vec::new();
-    axes.push(vec![String::from("GNU"), String::from("OSS")]);
-    axes.push(vec![String::from("FLOSS"), String::from("Proprietary")]);
-    axes
-}
-
 #[derive(FromForm)]
 struct UserSelection {
     selection: usize,
@@ -122,13 +105,13 @@ fn question(id: usize, questions: State<Questions>) -> Template {
         question_text: &'a str,
         choices: Vec<&'a str>,
     };
-    let mut choices = Vec::new();
+    let mut choices: Vec<&str> = Vec::new();
     for c in &question.choices {
-        choices.push(c.text);
+        choices.push(&c.text);
     }
     let pquestion = PureQuestion {
         id: id,
-        question_text: question.text,
+        question_text: &question.text,
         choices: choices,
     };
     Template::render("question", &pquestion)
@@ -151,7 +134,7 @@ fn answer(id: usize, choice: Form<UserSelection>, mut cookies: Cookies, question
 
 #[get("/result")]
 fn result(cookies: Cookies, questions: State<Questions>) -> Template {
-    let axes = dummy_axes();
+    let axes = question::dummy_axes();
     let mut marks: Marks = Marks::from(&axes);
 
     for i in 0 .. questions.len() {
@@ -184,35 +167,7 @@ fn result(cookies: Cookies, questions: State<Questions>) -> Template {
 }
 
 fn main() {
-    let mut questions: Vec<Question> = Vec::new();
-    let q1 = Question {
-        text: "Do you think FLOSS should protect themselves?",
-        choices: vec![
-            Choice {
-                text: "yes",
-                scores: vec![(String::from("GNU"), 1)],
-            },
-            Choice {
-                text: "no",
-                scores: vec![(String::from("OSS"), 1)],
-            },
-            Choice {
-                text: "why floss",
-                scores: vec![(String::from("Proprietary"), 1)],
-            },
-        ],
-    };
-    let q2 = Question {
-        text: "lolololo",
-        choices: vec![
-            Choice {
-                text: "wow",
-                scores: vec![(String::from("FLOSS"), 0)],
-            },
-        ],
-    };
-    questions.push(q1);
-    questions.push(q2);
+    let questions = question::questions();
 
     rocket::ignite()
         .mount("/", routes![index, question, answer, result])
